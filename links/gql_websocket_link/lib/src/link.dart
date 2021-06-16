@@ -42,7 +42,7 @@ class WebSocketLink extends Link {
   final _requests = <Request>[];
 
   // subscriptions that need to be re-initialized after channel reconnect
-  final _reConnectRequests = <Request>[];
+  final _reconnectRequests = <Request>[];
 
   /// A function that returns a `WebSocketChannel`.
   /// This is useful if you have dynamic Auth token and want to regenerate it after the socket has disconnected.
@@ -207,7 +207,7 @@ class WebSocketLink extends Link {
         final parsedMessage = await _parseSocketMessage(message);
         _messagesController.add(parsedMessage);
         if (parsedMessage is ConnectionAck) {
-          _reConnectRequests.forEach((request) {
+          _reconnectRequests.forEach((request) {
             // Send the request.
             _write(
               StartOperation(
@@ -216,13 +216,13 @@ class WebSocketLink extends Link {
               ),
             ).catchError(_messagesController.addError);
           });
-          _reConnectRequests.clear();
+          _reconnectRequests.clear();
         }
       }, onDone: () {
         _connectionStateController.add(closed);
         if (autoReconnect) {
-          _reConnectRequests.clear();
-          _reConnectRequests.addAll(_requests);
+          _reconnectRequests.clear();
+          _reconnectRequests.addAll(_requests);
           if (_reconnectTimer?.isActive != true) {
             _reconnectTimer = Timer.periodic(reconnectInterval, (timer) {
               if (_connectionStateController.value == closed) {
