@@ -134,9 +134,8 @@ class WebSocketLink extends Link {
     );
     _requests.add(requestWithContext);
 
-    if (_connectionStateController.value == closed) {
-      await _connect();
-    }
+    await _connectIfNecessary();
+
     final StreamController<Response> response = StreamController();
     StreamSubscription<GraphQLSocketMessage>? messagesSubscription;
 
@@ -194,7 +193,11 @@ class WebSocketLink extends Link {
   }
 
   /// Connects to the server.
-  Future<void> _connect() async {
+  Future<void> _connectIfNecessary() async {
+    if (_connectionStateController.value != closed) {
+      return;
+    }
+
     try {
       _connectionStateController.add(connecting);
       _channel = await _channelGenerator();
@@ -219,17 +222,8 @@ class WebSocketLink extends Link {
           _reconnectRequests.clear();
         }
       }, onDone: () {
-        _connectionStateController.add(closed);
         if (autoReconnect) {
-          _reconnectRequests.clear();
-          _reconnectRequests.addAll(_requests);
-          if (_reconnectTimer?.isActive != true) {
-            _reconnectTimer = Timer.periodic(reconnectInterval, (timer) {
-              if (_connectionStateController.value == closed) {
-                _connect();
-              }
-            });
-          }
+          _beginReconnect(reconnectInterval);
         } else {
           _close();
         }
@@ -319,6 +313,32 @@ class WebSocketLink extends Link {
         return SubscriptionComplete(id);
       default:
         return UnknownData(map);
+    }
+  }
+
+  void reconnect() {
+    _channel?.sink.close(1000);
+    _beginReconnect(Duration.zero);
+  }
+
+  void _beginReconnect(Duration delayBeforeReconnect) {
+    if (_reconnectTimer?.isActive == true ||
+        _connectionStateController.value == connecting) {
+      return;
+    }
+
+    _connectionStateController.add(closed);
+    _reconnectRequests
+      ..clear()
+      ..addAll(_requests);
+
+    if (delayBeforeReconnect == Duration.zero) {
+      print("gql: Zero-delay reconnect");
+      _connectIfNecessary();
+    } else {
+      _reconnectTimer = Timer.periodic(reconnectInterval, (timer) {
+        _connectIfNecessary();
+      });
     }
   }
 
